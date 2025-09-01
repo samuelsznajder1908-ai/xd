@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rastreador de Asistencia y Calendario Escolar</title>
+  <meta name="theme-color" content="#ffffff"/>
+  <style>
+    /* ====== Tema (claro por defecto) ====== */
+    :root{
+      --bg:#ffffff;            /* fondo general */
+      --fg:#000000;            /* texto general */
+      --card:#ffffff;          /* tarjetas / popups */
+      --surface:#ffffff;       /* inputs/selects */
+      --hover-bg:#f0f0f0;      /* hover neutro */
+      --border:#e5e5e5;
+      --accent:#1e88e5;        /* AZUL que debe mantenerse azul */
+      --accent-active:#1565c0;
+      --present:#e8f5e9; --excused:#e3f2fd; --unexcused:#ffebee;
+    }
+    :root[data-theme="dark"]{
+      --bg:#000000;
+      --fg:#ffffff;
+      --card:#000000;
+      --surface:#000000;
+      --hover-bg:#222222;
+      --border:#444444;
+      --accent:#1e88e5;        /* se mantiene AZUL */
+      --accent-active:#42a5f5;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--fg)}
+    a{color:var(--accent)}
+
+    header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:0.75rem 1rem;z-index:10}
+    main{display:grid;gap:1rem;grid-template-columns:1fr;max-width:1100px;margin:0 auto;padding:1rem}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    input, select{width:100%;padding:.6rem .7rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--fg)}
+    .buttons{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
+    .btn{appearance:none;border:none;background:var(--accent);color:#fff;padding:.6rem .8rem;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn:active{background:var(--accent-active)}
+    .btn-outline{background:var(--bg);color:var(--accent);border:1px solid var(--accent)}
+    .btn-small{padding:.35rem .6rem;border-radius:8px;font-size:.85rem}
+    .subject{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;padding:.6rem;margin-top:.5rem}
+    .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-top:.5rem}
+    .box{padding:.5rem;border:1px solid var(--border);border-radius:8px;text-align:center;font-size:.85rem}
+
+    /* Weekly grid */
+    .week-grid{display:grid;grid-template-columns: 80px repeat(7, 1fr);gap:.5rem;margin-top:1rem}
+    .week-time-col{display:flex;flex-direction:column;gap:.35rem;font-size:.8rem;opacity:.8}
+    .week-day-col{display:grid;grid-auto-rows:minmax(34px, auto);gap:.35rem;padding-bottom:.35rem;border-left:1px dashed var(--border);padding-left:.35rem;border-radius:10px}
+    .week-day-header{grid-column: 1 / -1;text-align:center;font-weight:700;margin-bottom:.25rem;text-transform:capitalize}
+    .slot{border:1px dashed #7770;border-radius:10px;min-height:34px;display:flex;align-items:center;justify-content:center;font-size:.75rem;opacity:.6}
+    .class-box{border-radius:10px;padding:.35rem .45rem;text-align:center;font-size:.85rem;box-shadow:0 2px 4px rgba(0,0,0,.05); position:relative}
+    .class-box.present{ background: var(--present); }
+    .class-box.excused{ background: var(--excused); }
+    .class-box.unexcused{ background: var(--unexcused); }
+    .weekend-col{background:#ffebee33;color:#b71c1c;border-left-color:#f7b4b4}
+
+    /* Popup asistencia */
+    .popup { margin-top: .25rem; display:flex; flex-direction:column; gap:.3rem; background: var(--card); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:.4rem; box-shadow:0 2px 6px rgba(0,0,0,0.15); z-index:10; position:absolute }
+    .popup button { border:none; border-radius:6px; padding:.35rem .5rem; cursor:pointer; font-size:.85rem; text-align:left }
+    .popup button:hover { background: var(--hover-bg) }
+
+    /* Iconos del header */
+    .btn-icon{ background:none; border:none; cursor:pointer; font-size:1.6rem; color:#808080; padding:.35rem; line-height:1 }
+    :root[data-theme="dark"] .btn-icon{ color:#dddddd }
+    .btn-icon:hover{ color:#000 }
+    :root[data-theme="dark"] .btn-icon:hover{ color:#ffffff }
+
+    /* SOLO lo que pediste más grande */
+    header h1 { font-size:175% !important; }
+    #btnToday, #btnStats { font-size:175% !important; }
+
+    @media (min-width:900px){ main{grid-template-columns:1.2fr .8fr} }
+  
+    /* 🔥 Nuevo: Forzar texto negro en cajas de clases (calendario) */
+    .class-box.present,
+    .class-box.excused,
+    .class-box.unexcused {
+      color: #000 !important;
+    }
+    .class-box.present strong,
+    .class-box.excused strong,
+    .class-box.unexcused strong {
+      color: #000 !important;
+    }
+    .class-box.present .tiny,
+    .class-box.excused .tiny,
+    .class-box.unexcused .tiny {
+      color: #000 !important;
+      opacity: 0.8;
+    }
+
+  
+    /* 🔥 Nuevo: Botones redondeados tipo píldora */
+    .btn,
+    .btn-outline,
+    .btn-small,
+    .btn-icon {
+      border-radius: 9999px !important;
+    }
+
+  
+    /* 🔥 Nuevo: Texto negro en las filas de HOY con fondo de asistencia */
+    #todayClasses .subject {
+      color: #000 !important;
+    }
+    #todayClasses .subject strong,
+    #todayClasses .subject .tiny {
+      color: #000 !important;
+    }
+
+  
+    /* 🔥 Escalar toda la app a 130% */
+    body {
+      zoom: 1.3;
+    }
+
+  </style>
+
+<style id="btnTopStyles">
+  /* Estilos adicionales para el botón subir arriba */
+  #btnTop:hover { transform: translateY(-3px); background:#ffffff; }
+  #btnTop:active { transform: translateY(-1px) scale(.98); }
+  /* asegurar visibilidad en modo oscuro (fondo blanco con borde azul sigue ok) */
+  :root[data-theme="dark"] #btnTop { background: #ffffff; color: var(--accent); }
+</style>
+
+</head>
+<body>
+  
+<header style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 1rem;border-bottom:1px solid var(--border);background:var(--bg);z-index:999">
+  <div style="display:flex;align-items:center;gap:0.9rem">
+    <h1 style="margin:0;">Rastreador de Asistencia</h1>
+    <button id="btnToday" class="btn-icon" title="Ir a hoy">📅</button>
+    <button id="btnStats" class="btn-icon" title="Ver estadísticas">📊</button>
+    <button id="btnGrades" class="btn-icon" title="Ir a calculadora">🧮</button>
+    <button id="btnTheme" class="btn-icon" title="Cambiar tema">🌙</button>
+  </div>
+  <div style="font-size:0.85rem;color:var(--fg);opacity:0.9">by Samuel Sznajder</div>
+</header>
+
+<div id="notifications" class="card" style="max-width:1100px;margin:0 auto 1rem;padding:.75rem;">
+  <strong>Notificaciones</strong>
+  <div id="notificationsList" class="tiny" style="margin-top:.5rem">No hay notificaciones.</div>
+</div>
+
+<main>
+  <section class="card" id="setup">
+    <h2>Plan semanal y materias</h2>
+    <div style="display:grid;gap:.6rem;grid-template-columns:2fr 1fr 1fr">
+      <div><label>Nombre de la materia</label><input id="subjectName" type="text" placeholder="Ej. Física"></div>
+      <div><label>Día</label>
+        <select id="daySelect">
+          <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
+          <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option>
+        </select>
+      </div>
+      <div><label>Hora</label><input id="timeSelect" type="time" value="08:00"></div>
+    </div>
+    <div class="buttons">
+      <button id="addSubjectBtn" class="btn">Añadir</button>
+      <button id="clearAllBtn" class="btn btn-outline">Borrar todo</button>
+    </div>
+    <div id="subjectList" style="margin-top:.75rem"></div>
+  </section>
+
+  <section class="card">
+    <h2>Hoy</h2>
+    <div id="todayClasses" style="margin-top:.6rem"></div>
+  </section>
+
+  <section class="card">
+    <h2>Calendario semanal</h2>
+    <div id="calendar" style="margin-top:.6rem"></div>
+  </section>
+
+  <section class="card">
+    <h2>Estadísticas</h2>
+    <div id="stats" style="margin-top:.6rem"></div>
+  </section>
+
+  
+  <section class="card" id="grades">
+    <h2>Calculadora de Notas</h2>
+    <div id="gradesList" style="margin-top:.75rem; display: grid; gap: 0.5rem;"></div>
+    <div style="margin-top:1rem;font-weight:bold">
+      Media final del curso: <span id="finalAverage">0%</span>
+    </div>
+  </section>
+
+<section class="card">
+    <h2>Mensaje</h2>
+    <p>Hola chicos, he creado esta app para facilitarles la vida con asistencias en todo el curso. Espero que os sea útil.</p>
+  </section>
+</main>
+
+<script>
+/************ Utilidades y datos ************/
+const STORAGE = { subjects:'ras_subs_v3', schedule:'ras_sched_v3', attendance:'ras_att_v3', holidays:'ras_hols_v3', theme:'ras_theme_v1' };
+const START = new Date('2025-09-11'); // inicio del curso
+const END   = new Date('2026-06-19'); // fin del curso
+const oneDay = 24*60*60*1000;
+const PRESET_HOLIDAYS = ['2025-10-12','2025-11-01','2025-12-06','2025-12-08',
+  '2025-12-22','2025-12-23','2025-12-24','2025-12-25','2025-12-26','2025-12-27','2025-12-28','2025-12-29','2025-12-30','2025-12-31',
+  '2026-01-01','2026-01-02','2026-01-03','2026-01-04','2026-01-05','2026-01-06','2026-01-07',
+  '2026-03-30','2026-03-31','2026-04-01','2026-04-02','2026-04-03','2026-04-04','2026-04-05',
+  '2026-05-01','2026-05-30'];
+
+function safeLoad(k, d){ try{ const v = localStorage.getItem(k); return v?JSON.parse(v):d;}catch(e){console.warn('load failed',k,e); return d;} }
+function safeSave(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){console.warn('save failed',k,e);} }
+function saveAll(){ safeSave(STORAGE.subjects, subjects); safeSave(STORAGE.schedule, schedule); safeSave(STORAGE.attendance, attendance); safeSave(STORAGE.holidays, holidays); }
+function fmt(d){ return d.toISOString().slice(0,10); }
+function parseTime(t){ if(!t) return 0; const [h,m]=t.split(':').map(Number); return h*60+m; }
+function uuid(){ if(window.crypto && crypto.randomUUID) return crypto.randomUUID(); return 'id-'+Math.random().toString(36).slice(2,10); }
+function mondayOf(d){ const x=new Date(d); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
+
+let subjects = safeLoad(STORAGE.subjects, []);   // {id,name}
+let schedule = safeLoad(STORAGE.schedule, []);   // {id,subjectId,dow,time}
+let attendance = safeLoad(STORAGE.attendance, {}); // { 'YYYY-MM-DD': { subjectId: 'P'|'J'|'NJ' } }
+let holidays = safeLoad(STORAGE.holidays, PRESET_HOLIDAYS);
+
+function isHoliday(dateStr){ try{ const d = new Date(dateStr); if (d.getDay()===0 || d.getDay()===6) return true; return holidays.includes(dateStr);}catch(e){return false;} }
+function classesForDate(dateStr){ const d = new Date(dateStr); const dow = d.getDay(); return schedule.filter(s=>s.dow===dow).map(s=>({ scheduleId:s.id, subjectId:s.subjectId, time:s.time })); }
+function ensureDefaultAttendance(dateStr){ if (isHoliday(dateStr)) return; attendance[dateStr] = attendance[dateStr] || {}; classesForDate(dateStr).forEach(c=>{ if (!attendance[dateStr][c.subjectId]) attendance[dateStr][c.subjectId]='P'; }); safeSave(STORAGE.attendance, attendance); }
+
+const el = id => document.getElementById(id);
+function elCreate(tag, cls, inner){ const e=document.createElement(tag); if(cls) e.className=cls; if(inner!==undefined) e.innerHTML=inner; return e; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+/************ Render: Materias ************/
+function planSummary(subjectId){ const plans = schedule.filter(s=>s.subjectId===subjectId).sort((a,b)=>parseTime(a.time)-parseTime(b.time)); if(!plans.length) return '— (no programada)'; return plans.map(p=>['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][p.dow]+' '+p.time).join(' · '); }
+function subjectStats(subjectId){ let total=0,p=0,j=0,nj=0; for(let t=START.getTime(); t<=END.getTime(); t+=oneDay){ const d=new Date(t); const ds=fmt(d); if (isHoliday(ds)) continue; const todays = schedule.filter(s=>s.subjectId===subjectId && s.dow===d.getDay()); if(!todays.length) continue; total += todays.length; todays.forEach(()=>{ const state = (attendance[ds]||{})[subjectId] || 'P'; if(state==='P') p++; else if(state==='J') j++; else nj++; }); } return { total, p, j, nj, presentPct: total? p/total*100:0, excusedPct: total? j/total*100:0, unexcusedPct: total? nj/total*100:0 };
+}
+function renderSubjects(){ const container = el('subjectList'); container.innerHTML=''; subjects.forEach(s=>{ const wrap = elCreate('div',''); const box = elCreate('div','subject'); const left = elCreate('div'); left.innerHTML = '<strong>'+escapeHtml(s.name)+'</strong><div class="tiny">Plan: '+planSummary(s.id)+'</div>'; const controls = elCreate('div',''); const edit = elCreate('button','btn-small btn-outline'); edit.textContent='Editar'; const del = elCreate('button','btn-small btn-outline'); del.textContent='Eliminar'; edit.addEventListener('click', ()=>{ const name=prompt('Nuevo nombre:',s.name); if(name){ s.name=name.trim(); safeSave(STORAGE.subjects, subjects); renderAll(); } }); del.addEventListener('click', ()=>{ if(confirm('Eliminar materia y su programación?')){ schedule = schedule.filter(sc=>sc.subjectId!==s.id); subjects = subjects.filter(ss=>ss.id!==s.id); saveAll(); renderAll(); } }); controls.appendChild(edit); controls.appendChild(del); box.appendChild(left); box.appendChild(controls); const stats = subjectStats(s.id); const kpi = elCreate('div','kpi'); const pbox = elCreate('div','box'); pbox.innerHTML='<div>Presente</div><b>'+Math.round(stats.presentPct)+'%</b>'; const jbox = elCreate('div','box'); jbox.innerHTML='<div>Justificado</div><b>'+Math.round(stats.excusedPct)+'%</b>'; const nbox = elCreate('div','box'); const njPct = Math.round(stats.unexcusedPct); if (stats.unexcusedPct >= 25) { nbox.style.background = '#ffebee'; nbox.style.color = '#b00020'; } else if (stats.unexcusedPct >= 20) { nbox.style.background = '#fff8e1'; nbox.style.color = '#f57f17'; } nbox.innerHTML='<div>No justificado</div><b>'+njPct+'%</b>'; kpi.appendChild(pbox); kpi.appendChild(jbox); kpi.appendChild(nbox); wrap.appendChild(box); wrap.appendChild(kpi); container.appendChild(wrap); }); }
+
+/************ Render: Hoy ************/
+function renderToday(){ const container = el('todayClasses'); container.innerHTML=''; const today = new Date(); const ds = fmt(today); ensureDefaultAttendance(ds); const classes = classesForDate(ds); if (!classes.length){ container.innerHTML='<div class="tiny">Hoy no hay clases programadas.</div>'; return; } classes.forEach(c=>{ const s = subjects.find(x=>x.id===c.subjectId) || {name:'(eliminada)'}; const state = (attendance[ds]||{})[c.subjectId] || 'P'; const row = elCreate('div','subject'); row.style.background = state==='P'? 'var(--present)': state==='J'? 'var(--excused)': 'var(--unexcused)'; row.innerHTML = '<div><strong>'+escapeHtml(s.name)+'</strong><div class="tiny">Hoy a las '+c.time+'</div></div>'; const ctrl = elCreate('div',''); ['P','J','NJ'].forEach(code=>{ const btn = elCreate('button','btn-small'); btn.textContent = code; if(code!==state) btn.classList.add('btn-outline'); btn.addEventListener('click', ()=>{ attendance[ds] = attendance[ds] || {}; attendance[ds][c.subjectId]=code; safeSave(STORAGE.attendance, attendance); renderAll(); }); ctrl.appendChild(btn); }); row.appendChild(ctrl); container.appendChild(row); }); }
+
+/************ Render: Calendario semanal ************/
+function uniqueSortedHours(){ const set = new Set((schedule||[]).map(s => (s.time||'').slice(0,5)).filter(Boolean)); if (set.size===0) ['08:00','09:00','10:00','11:00','12:00','13:00'].forEach(h=>set.add(h)); return Array.from(set).sort(); }
+function stateClass(code){ if(code==='J') return 'excused'; if(code==='NJ') return 'unexcused'; return 'present'; }
+function renderWeeklyCalendar(){ const container = el('calendar'); container.innerHTML = ''; const hours = uniqueSortedHours(); const start = new Date(START); const end = new Date(END); let cur = mondayOf(start); while (cur <= end){ const weekStart = new Date(cur); const weekEnd = new Date(cur); weekEnd.setDate(weekEnd.getDate()+6); const section = elCreate('section','card'); section.id = 'week-'+fmt(weekStart); section.innerHTML = `<h3 style="margin:0 0 .5rem 0">Semana del ${weekStart.toLocaleDateString('es-ES')} al ${weekEnd.toLocaleDateString('es-ES')}</h3>`; const grid = elCreate('div','week-grid'); const tcol = elCreate('div','week-time-col'); tcol.appendChild(elCreate('div','week-day-header','&nbsp;')); hours.forEach(h=> tcol.appendChild(elCreate('div','slot', h))); grid.appendChild(tcol); for(let d=0; d<7; d++){ const day = new Date(weekStart); day.setDate(day.getDate()+d); const ds = fmt(day); const weekendOrHoliday = (day.getDay()===0 || day.getDay()===6 || (holidays||[]).includes(ds)); const col = elCreate('div','week-day-col'+(weekendOrHoliday?' weekend-col':'')); const isToday = fmt(new Date())===ds; const headText = day.toLocaleDateString('es-ES',{weekday:'long'}); const head = elCreate('div','week-day-header', headText + (isToday?' • <span style="color:var(--accent)">hoy</span>':'')); col.appendChild(head); if (!weekendOrHoliday) ensureDefaultAttendance(ds); const byTime = {}; (classesForDate(ds)||[]).forEach(c=>{ byTime[(c.time||'').slice(0,5)] = c; }); hours.forEach(h=>{ const c = byTime[h]; if (c){ const subj = (subjects||[]).find(s=>s.id===c.subjectId) || {name:'(eliminada)'}; const state = ((attendance||{})[ds]||{})[c.subjectId] || 'P'; const box = elCreate('div', 'class-box '+stateClass(state), `<strong>${escapeHtml(subj.name)}</strong><div class="tiny">${escapeHtml(h)}</div>`); box.addEventListener('click', (ev)=>{ ev.stopPropagation(); const ex = box.querySelector('.popup'); if (ex) { ex.remove(); return; } const popup = elCreate('div','popup'); [['P','Presente'],['NJ','Injustificada'],['J','Justificada']].forEach(([st,label])=>{ const b = elCreate('button','',label); b.addEventListener('click', e=>{ e.stopPropagation(); if(!attendance[ds]) attendance[ds] = {}; attendance[ds][c.subjectId] = st; saveAll(); renderAll(); }); popup.appendChild(b); }); box.appendChild(popup); }); col.appendChild(box); } else { col.appendChild(elCreate('div','slot','')); } }); grid.appendChild(col); }
+    section.appendChild(grid); container.appendChild(section); cur.setDate(cur.getDate()+7); }
+}
+
+/************ Render: Estadísticas y Notifs ************/
+function renderStats(){ const container = document.getElementById('stats'); container.innerHTML=''; subjects.forEach(s=>{ const ss = subjectStats(s.id); const div = elCreate('div','subject'); div.innerHTML = '<div><strong>'+escapeHtml(s.name)+'</strong><div class="tiny">'+ss.total+' clases en el periodo</div></div>'; const kpi = elCreate('div','kpi'); const pBox = elCreate('div','box'); pBox.innerHTML = '<div>P</div><b>'+Math.round(ss.presentPct)+'%</b>'; const jBox = elCreate('div','box'); jBox.innerHTML = '<div>J</div><b>'+Math.round(ss.excusedPct)+'%</b>'; const njBox = elCreate('div','box'); const njPct = Math.round(ss.unexcusedPct); if (ss.unexcusedPct >= 25) { njBox.style.background = '#ffebee'; njBox.style.color = '#b00020'; } else if (ss.unexcusedPct >= 20) { njBox.style.background = '#fff8e1'; njBox.style.color = '#f57f17'; } njBox.innerHTML = '<div>NJ</div><b>'+njPct+'%</b>'; kpi.appendChild(pBox); kpi.appendChild(jBox); kpi.appendChild(njBox); div.appendChild(kpi); container.appendChild(div); }); let gTotal=0,gP=0,gJ=0,gNJ=0; subjects.forEach(s=>{ const t=subjectStats(s.id); gTotal+=t.total; gP+=t.p; gJ+=t.j; gNJ+=t.nj; }); const totals = elCreate('div','kpi'); const gPres = elCreate('div','box'); gPres.innerHTML = '<div>Presente</div><b>'+(gTotal?Math.round(gP/gTotal*100):0)+'%</b>'; const gJbx = elCreate('div','box'); gJbx.innerHTML = '<div>Justificado</div><b>'+(gTotal?Math.round(gJ/gTotal*100):0)+'%</b>'; const gNJbx = elCreate('div','box'); const gNJpct = gTotal?Math.round(gNJ/gTotal*100):0; if (gNJpct >= 25) { gNJbx.style.background = '#ffebee'; gNJbx.style.color = '#b00020'; } else if (gNJpct >= 20) { gNJbx.style.background = '#fff8e1'; gNJbx.style.color = '#f57f17'; } gNJbx.innerHTML = '<div>No justificado</div><b>'+gNJpct+'%</b>'; totals.appendChild(gPres); totals.appendChild(gJbx); totals.appendChild(gNJbx); container.appendChild(totals); }
+
+function renderNotifications(){ const listEl = document.getElementById('notificationsList'); const msgs = []; subjects.forEach(s => { const stats = subjectStats(s.id); if (stats.unexcusedPct >= 25) { msgs.push('Has superado en '+escapeHtml(s.name)+' el 25% de faltas injustificadas'); } }); listEl.innerHTML = msgs.length ? msgs.map(m=>'<div style="padding:.4rem 0;border-bottom:1px dashed var(--border)">'+m+'</div>').join('') : 'No hay notificaciones.'; }
+function pushNotice(text){ const listEl = document.getElementById('notificationsList'); const row = document.createElement('div'); row.textContent = text; row.style.padding = '.4rem 0'; row.style.borderBottom = '1px dashed var(--border)'; listEl.prepend(row); setTimeout(()=>{ row.style.opacity='0.0'; row.style.transition='opacity .6s'; setTimeout(()=>row.remove(), 700); }, 3500); }
+
+/************ App: render all ************/
+function renderAll(){ renderNotifications(); renderSubjects(); renderToday(); renderWeeklyCalendar(); renderStats(); }
+
+/************ Eventos ************/
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Tema oscuro/claro
+  const savedTheme = localStorage.getItem(STORAGE.theme) || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  const themeBtn = el('btnTheme'); themeBtn.textContent = (savedTheme==='light') ? '🌙' : '☀️';
+  themeBtn.addEventListener('click', ()=>{ const cur = document.documentElement.getAttribute('data-theme'); const next = cur==='light' ? 'dark' : 'light'; document.documentElement.setAttribute('data-theme', next); localStorage.setItem(STORAGE.theme, next); themeBtn.textContent = (next==='light') ? '🌙' : '☀️'; });
+
+  // Añadir/Borrar
+  el('addSubjectBtn').addEventListener('click', ()=>{
+    const name = el('subjectName').value.trim();
+    const dow = parseInt(el('daySelect').value,10);
+    const time = el('timeSelect').value || '08:00';
+    if(!name){ pushNotice('Escribe el nombre de la materia'); return; }
+    let subj = subjects.find(s=>s.name.toLowerCase()===name.toLowerCase());
+    if(!subj){ subj = {id:uuid(), name}; subjects.push(subj); safeSave(STORAGE.subjects, subjects); }
+    schedule.push({ id: uuid(), subjectId: subj.id, dow, time });
+    safeSave(STORAGE.schedule, schedule);
+    el('subjectName').value='';
+    renderAll();
+  });
+
+  el('clearAllBtn').addEventListener('click', ()=>{
+    if(confirm('Borrar todo (materias, plan, asistencia)?')){
+      subjects=[]; schedule=[]; attendance={};
+      saveAll();
+      renderAll();
+    }
+  });
+
+  // Botones de cabecera
+  el('btnStats').addEventListener('click', ()=>{ const st = document.getElementById('stats'); if (st) st.scrollIntoView({behavior:'smooth'}); });
+  el('btnToday').addEventListener('click', ()=>{
+    // Ir a calculadora (se añadió un botón con emoji)
+    const _btnG = el('btnGrades'); if (_btnG) _btnG.addEventListener('click', ()=>{ const g = document.getElementById('grades'); if (g) g.scrollIntoView({behavior:'smooth'}); else pushNotice('No existe la calculadora todavía.'); });
+    
+    const today = new Date();
+    if (today < START || today > END){
+      pushNotice('Ese día todavía no llegó bro.');
+      return;
+    }
+    const weekId = 'week-'+fmt(mondayOf(today));
+    const sec = document.getElementById(weekId);
+    if (sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
+    else pushNotice('Ese día todavía no llegó bro.');
+  });
+
+  // Primer render
+  renderAll();
+  // Botón "Subir arriba" - comportamiento
+  const btnTop = el('btnTop');
+  if (btnTop) {
+    btnTop.addEventListener('click', ()=>{ window.scrollTo({top:0, behavior:'smooth'}); });
+    // mostrar solo al hacer scroll hacia abajo
+    const toggleTopBtn = () => {
+      if (window.scrollY > 200) btnTop.style.opacity = '1';
+      else btnTop.style.opacity = '0';
+    };
+    window.addEventListener('scroll', toggleTopBtn);
+    // estado inicial
+    toggleTopBtn();
+  }
+
+});
+
+
+
+
+/************ Notas ************/
+let grades = safeLoad("ras_grades_v1", {}); // { subjectId: [ {score, weight} ] }
+
+function saveGrades(){
+  safeSave("ras_grades_v1", grades);
+}
+
+// Migración/normalización: asegurar scores 0..10 (2 decimales) y weights 0..100 (enteros)
+(function normalizeGrades(){
+  let changed=false;
+  Object.keys(grades).forEach(sub=>{
+    grades[sub].forEach(g=>{
+      // score: 0..10, 2 decimales
+      let s = parseFloat(g.score) || 0;
+      if (s > 10) { s = 10; changed = true; }
+      if (s < 0) { s = 0; changed = true; }
+      g.score = Number(s).toFixed(2);
+
+      // weight: integer 0..100
+      let w = parseInt(g.weight);
+      if (isNaN(w)) w = 0;
+      if (w > 100) { w = 100; changed = true; }
+      if (w < 0) { w = 0; changed = true; }
+      g.weight = String(Math.round(w));
+    });
+  });
+  if(changed) saveGrades();
+})();
+
+function clampScoreValue(v){
+  let n = parseFloat(v);
+  if (isNaN(n)) n = 0;
+  if (n < 0) n = 0;
+  if (n > 10) n = 10;
+  return Number(n).toFixed(2);
+}
+
+function clampWeightValue(v){
+  let n = parseInt(v);
+  if (isNaN(n)) n = 0;
+  if (n < 0) n = 0;
+  if (n > 100) n = 100;
+  return String(Math.round(n));
+}
+
+function calcSubjectAverage(subjectId){
+  const list = grades[subjectId] || [];
+  let total=0, sum=0;
+  list.forEach(g=>{
+    const s = parseFloat(g.score)||0;   // escala 0..10
+    const w = parseInt(g.weight)||0;    // porcentaje entero 0..100
+    sum += s * w;
+    total += w;
+  });
+  const raw = total? (sum/total) : 0;
+  return Math.min(10, raw); // asegurar máxima 10.00
+}
+
+function renderGrades(){
+  const container = el("gradesList");
+  container.innerHTML="";
+  let globalSum=0, globalW=0;
+
+  subjects.forEach(s=>{
+    const wrap=elCreate("div","subject");
+    wrap.style.flexDirection="column";
+    const header=elCreate("div","");
+    header.innerHTML=`<strong>${escapeHtml(s.name)}</strong>`;
+
+    const avgVal = calcSubjectAverage(s.id);
+    const avg = avgVal.toFixed(2);
+    const avgBox=elCreate("div","");
+    avgBox.textContent=`Media: ${avg}`;
+    avgBox.style.marginTop=".3rem";
+
+    const notesDiv=elCreate("div","");
+    (grades[s.id]||[]).forEach((g,idx)=>{
+      const row=elCreate("div","");
+      row.style.display="flex";
+      row.style.gap="0.5rem";
+      row.style.marginTop="0.3rem";
+
+      // Nota input (0-10, 2 decimales)
+      const inpScore=elCreate("input","");
+      inpScore.type="number"; inpScore.placeholder="Nota (0-10)"; inpScore.value=g.score;
+      inpScore.min = "0"; inpScore.max = "10"; inpScore.step = "0.01";
+
+      // Peso input: integer 0..100, step 10
+      const inpWeight=elCreate("input","");
+      inpWeight.type="number"; inpWeight.placeholder="% (0-100)"; inpWeight.value=g.weight;
+      inpWeight.min = "0"; inpWeight.max = "100"; inpWeight.step = "10";
+      inpWeight.style.width = "100px";
+
+      // Eventos para nota: clamp y formateo
+      inpScore.addEventListener("input",()=>{
+        const clamped = clampScoreValue(inpScore.value);
+        g.score = clamped;
+        inpScore.value = clamped;
+        saveGrades();
+        renderGrades();
+      });
+      inpScore.addEventListener("blur", ()=>{
+        const clamped = clampScoreValue(inpScore.value);
+        g.score = clamped;
+        inpScore.value = clamped;
+        saveGrades();
+      });
+
+      // Eventos para peso: clamp, formato entero, y teclas flecha +/-10
+      inpWeight.addEventListener("input",()=>{
+        const clamped = clampWeightValue(inpWeight.value);
+        g.weight = clamped;
+        inpWeight.value = clamped;
+        saveGrades();
+        renderGrades();
+      });
+
+      inpWeight.addEventListener("keydown",(ev)=>{
+        if (ev.key === "ArrowUp" || ev.keyCode === 38){
+          ev.preventDefault();
+          let v = parseInt(inpWeight.value) || 0;
+          v += 10;
+          const clamped = clampWeightValue(v);
+          g.weight = clamped;
+          inpWeight.value = clamped;
+          saveGrades(); renderGrades();
+        } else if (ev.key === "ArrowDown" || ev.keyCode === 40){
+          ev.preventDefault();
+          let v = parseInt(inpWeight.value) || 0;
+          v -= 10;
+          const clamped = clampWeightValue(v);
+          g.weight = clamped;
+          inpWeight.value = clamped;
+          saveGrades(); renderGrades();
+        }
+      });
+
+      inpWeight.addEventListener("blur", ()=>{
+        const clamped = clampWeightValue(inpWeight.value);
+        g.weight = clamped;
+        inpWeight.value = clamped;
+        saveGrades();
+      });
+
+      const delBtn=elCreate("button","btn-small btn-outline","🗑️");
+      delBtn.addEventListener("click",()=>{ grades[s.id].splice(idx,1); saveGrades(); renderGrades(); });
+      row.appendChild(inpScore);
+      row.appendChild(inpWeight);
+      row.appendChild(delBtn);
+      notesDiv.appendChild(row);
+    });
+
+    const addBtn=elCreate("button","btn-small btn-outline","Añadir nota");
+    addBtn.style.marginTop=".5rem";
+    addBtn.addEventListener("click",()=>{
+      grades[s.id]=grades[s.id]||[];
+      grades[s.id].push({score: (0).toFixed(2), weight: "0"});
+      saveGrades(); renderGrades();
+    });
+
+    wrap.appendChild(header);
+    wrap.appendChild(avgBox);
+    wrap.appendChild(notesDiv);
+    wrap.appendChild(addBtn);
+    container.appendChild(wrap);
+
+    // acumular para global (utilizando la media de cada nota como ya en escala 0..10)
+    const list=grades[s.id]||[];
+    list.forEach(g=>{
+      const sVal = parseFloat(g.score)||0;
+      const wVal = parseInt(g.weight)||0;
+      globalSum += sVal * wVal;
+      globalW += wVal;
+    });
+  });
+
+  // calcular media final (en escala 0..10), y cap a 10.00
+  const finalRaw = globalW? (globalSum/globalW) : 0;
+  const finalAvg = Math.min(10, finalRaw);
+  const finalEl = el("finalAverage");
+  finalEl.textContent = finalAvg.toFixed(2);
+
+  // Colorear según intervalos:
+  // 0.00 - 5.00 => rojo
+  // >5.00 - <7.50 => amarillo
+  // >=7.50 - 10.00 => verde
+  if (finalAvg <= 5.00) {
+    finalEl.style.color = '#b00020';
+  } else if (finalAvg > 5.00 && finalAvg < 7.50) {
+    finalEl.style.color = '#f57f17';
+  } else {
+    finalEl.style.color = '#2e7d32';
+  }
+}
+
+// Integrar en renderAll (si no se ha hecho ya)
+if (!window._gradesIntegrated) {
+  const oldRenderAll = renderAll;
+  renderAll = function(){
+    oldRenderAll();
+    renderGrades();
+  };
+  window._gradesIntegrated = true;
+}
+
+</script>
+
+
+  <!-- Botón "Subir arriba" fijo -->
+  <button id="btnTop" class="btn-icon" title="Subir arriba" style="position:fixed;right:18px;bottom:18px;z-index:9999;font-size:1.2rem;background:#ffffff;color:var(--accent);padding:0;width:48px;height:48px;border-radius:50%;border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .25s ease, transform .12s ease;box-shadow:0 2px 6px rgba(30,136,229,0.12);">  ⬆️</button>
+
+
+<script>
+// Cerrar menú de asistencia al clicar fuera
+(function(){
+  function onDocClick(e){
+    try {
+      // elementos potenciales de menú que queremos cerrar
+      const popup = document.getElementById('attendancePopup');
+      const overlay = document.getElementById('asOverlay');
+      const nativeSel = document.getElementById('tempAttendanceSelect');
+      const actionSheet = document.querySelector('.action-sheet-overlay');
+      // If any of these exist and the click target is outside them, remove them.
+      const targets = [popup, overlay, nativeSel, actionSheet];
+      for (const el of targets){
+        if (!el) continue;
+        if (!el.contains(e.target)){
+          // but don't remove if clicking on a class-box (it will open another menu)
+          if (e.target.closest && e.target.closest('.class-box')) {
+            // do nothing, clicking on a class-box should be handled elsewhere
+            return;
+          }
+          el.remove();
+        }
+      }
+    } catch(err){
+      // safe fail
+      console.warn('Cerrar menú: error', err);
+    }
+  }
+  // Use capture to ensure we run before other handlers that might re-open menus
+  document.addEventListener('click', onDocClick, true);
+})();
+</script>
+
+
+<script>
+(function(){
+  function removeMenus(){
+    try {
+      const ids = ['attendancePopup','asOverlay','tempAttendanceSelect'];
+      ids.forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+      const overlays = document.querySelectorAll('.action-sheet-overlay');
+      overlays.forEach(o => o.remove());
+      const nativeSel = document.getElementById('tempAttendanceSelect');
+      if (nativeSel) nativeSel.remove();
+    } catch(err){ console.warn('removeMenus error', err); }
+  }
+
+  // Close menus when clicking anywhere outside menus.
+  function onDocClick(e){
+    try {
+      const popup = document.getElementById('attendancePopup');
+      const overlay = document.getElementById('asOverlay') || document.querySelector('.action-sheet-overlay');
+      const nativeSel = document.getElementById('tempAttendanceSelect');
+      // If no menus open, nothing to do
+      if (!popup && !overlay && !nativeSel) return;
+      // If click inside a class-box, allow its handler to open/handle menus; do nothing
+      if (e.target.closest && e.target.closest('.class-box')) {
+        // If click inside the popup itself also ignore
+        if (e.target.closest && (e.target.closest('#attendancePopup') || e.target.closest('.action-sheet-overlay') || e.target.closest('#tempAttendanceSelect'))) {
+          return;
+        }
+        // clicking a class-box should not close menus immediately (it may open another)
+        return;
+      }
+      // If click is inside the popup or overlay or native select, don't close
+      if ((popup && e.target.closest && e.target.closest('#attendancePopup')) ||
+          (overlay && e.target.closest && e.target.closest('.action-sheet-overlay')) ||
+          (nativeSel && e.target.closest && e.target.closest('#tempAttendanceSelect'))) {
+        return;
+      }
+      // Otherwise close all menus
+      removeMenus();
+    } catch(err){ console.warn('onDocClick error', err); }
+  }
+
+  // Use capture phase so this runs before other handlers that might re-open menus.
+  document.addEventListener('click', onDocClick, true);
+
+  // Close menus with Escape key
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      removeMenus();
+    }
+  });
+
+  // Also close menus when window is resized or scrolled (to avoid orphaned popups)
+  window.addEventListener('resize', removeMenus);
+  window.addEventListener('scroll', removeMenus, true);
+})();
+</script>
+
+
+<script>
+// Fix: asegurar que el botón de calculadora funcione correctamente desde cualquier estado.
+// Intentamos adjuntar el listener de inmediato y también al DOMContentLoaded por si acaso.
+(function(){
+  function attachGradesBtn(){
+    try {
+      const b = document.getElementById('btnGrades') || (typeof el === 'function' && el('btnGrades'));
+      if (!b) return;
+      // remove previous listener if any by cloning the node
+      const nb = b.cloneNode(true);
+      b.parentNode.replaceChild(nb, b);
+      nb.addEventListener('click', function(e){
+        e.preventDefault();
+        const g = document.getElementById('grades');
+        if (g) { g.scrollIntoView({behavior:'smooth', block:'start'}); }
+        else { 
+          if (typeof pushNotice === 'function') pushNotice('No existe la calculadora todavía.'); 
+          else alert('No existe la calculadora todavía.');
+        }
+      });
+    } catch(err){
+      console.warn('attachGradesBtn error', err);
+    }
+  }
+  // try now and also on DOMContentLoaded
+  attachGradesBtn();
+  document.addEventListener('DOMContentLoaded', attachGradesBtn);
+})();
+</script>
+
+</body>
+</html>
